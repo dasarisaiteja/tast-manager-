@@ -1,4 +1,4 @@
-const API_BASE = '/api';
+const API_BASE = 'https://tast-manager-xl5g.onrender.com/api';
 
 const getAuthHeaders = () => {
   const token = localStorage.getItem('taskflow_token');
@@ -11,7 +11,7 @@ const getAuthHeaders = () => {
 export const api = {
   // Projects
   async getProjects(status) {
-    const url = status && status !== 'All' 
+    const url = status && status !== 'All'
       ? `${API_BASE}/projects?status=${encodeURIComponent(status)}`
       : `${API_BASE}/projects`;
     const res = await fetch(url, { headers: getAuthHeaders() });
