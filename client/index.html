@@ -1,0 +1,1136 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>TaskFlow | Project & Task Management Dashboard</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📋</text></svg>" />
+  <!-- Tailwind CSS CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- React & ReactDOM -->
+  <script crossorigin src="https://unpkg.com/react@18/umd/react.development.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+  <!-- Babel Standalone for JSX -->
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          colors: {
+            brand: {
+              50: '#eef2ff',
+              100: '#e0e7ff',
+              500: '#6366f1',
+              600: '#4f46e5',
+              700: '#4338ca',
+            }
+          }
+        }
+      }
+    }
+  </script>
+  <style>
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+    .animate-spin-fast {
+      animation: spin 0.6s linear infinite;
+    }
+  </style>
+</head>
+<body class="bg-slate-50 text-slate-800 font-sans antialiased min-h-screen">
+  <div id="root"></div>
+
+  <script type="text/babel">
+    const { useState, useEffect, useMemo, useCallback } = React;
+
+    const API_BASE = '/api';
+
+    // SVG Icons
+    const Icons = {
+      Folder: () => (
+        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
+        </svg>
+      ),
+      CheckCircle: () => (
+        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+        </svg>
+      ),
+      Clock: () => (
+        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+        </svg>
+      ),
+      Plus: () => (
+        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 4v16m8-8H4" />
+        </svg>
+      ),
+      Refresh: () => (
+        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+        </svg>
+      ),
+      User: () => (
+        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+        </svg>
+      ),
+      Sparkles: () => (
+        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 3v4M3 5h4M6 17v4m-2-2h4m5-16l2.286 6.857L21 12l-5.714 2.143L13 21l-2.286-6.857L5 12l5.714-2.143L13 3z" />
+        </svg>
+      ),
+      Filter: () => (
+        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z" />
+        </svg>
+      ),
+      Search: () => (
+        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+        </svg>
+      ),
+      Close: () => (
+        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
+        </svg>
+      ),
+    };
+
+    function App() {
+      // Auth & Tenant State
+      const [token, setToken] = useState(() => localStorage.getItem('taskflow_token') || '');
+      const [currentUser, setCurrentUser] = useState(() => {
+        try {
+          return JSON.parse(localStorage.getItem('taskflow_user') || 'null');
+        } catch {
+          return null;
+        }
+      });
+
+      // Data State
+      const [projects, setProjects] = useState([]);
+      const [tasks, setTasks] = useState([]);
+      const [employees, setEmployees] = useState([]);
+
+      // Loading & Submission State
+      const [isLoading, setIsLoading] = useState(true);
+      const [isSubmittingProject, setIsSubmittingProject] = useState(false);
+      const [isSubmittingTask, setIsSubmittingTask] = useState(false);
+      const [updatingTaskId, setUpdatingTaskId] = useState(null);
+
+      // Filter States
+      const [projectStatusFilter, setProjectStatusFilter] = useState('All');
+      const [taskStatusFilter, setTaskStatusFilter] = useState('All');
+      const [taskPriorityFilter, setTaskPriorityFilter] = useState('All');
+      const [taskProjectFilter, setTaskProjectFilter] = useState('All');
+      const [searchQuery, setSearchQuery] = useState('');
+      const [viewMode, setViewMode] = useState('table'); // 'table' | 'card'
+
+      // Modal States
+      const [isProjectModalOpen, setIsProjectModalOpen] = useState(false);
+      const [isTaskModalOpen, setIsTaskModalOpen] = useState(false);
+      const [isLoginModalOpen, setIsLoginModalOpen] = useState(false);
+
+      // Toast Notifications
+      const [toasts, setToasts] = useState([]);
+
+      const addToast = (type, message) => {
+        const id = Date.now() + Math.random();
+        setToasts((prev) => [...prev, { id, type, message }]);
+        setTimeout(() => {
+          setToasts((prev) => prev.filter((t) => t.id !== id));
+        }, 4500);
+      };
+
+      // API Helper
+      const authHeaders = useMemo(() => {
+        return {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        };
+      }, [token]);
+
+      // Initialize / Check Auth Session
+      useEffect(() => {
+        if (!token) {
+          // If no token exists, automatically seed or register a default demo session
+          handleQuickDemoSeed(true);
+        } else {
+          loadDashboardData();
+        }
+      }, [token]);
+
+      // Fetch Projects, Tasks, and Employees
+      const loadDashboardData = async () => {
+        if (!token) return;
+        setIsLoading(true);
+        try {
+          // 1. Fetch Projects
+          const projUrl = projectStatusFilter !== 'All' 
+            ? `${API_BASE}/projects?status=${projectStatusFilter}` 
+            : `${API_BASE}/projects`;
+
+          const projRes = await fetch(projUrl, { headers: authHeaders });
+          const projData = await projRes.json();
+
+          if (!projRes.ok) {
+            throw new Error(projData.error || 'Failed to fetch projects');
+          }
+          setProjects(projData.data || []);
+
+          // 2. Fetch Tasks with query filters
+          const queryParams = new URLSearchParams();
+          if (taskStatusFilter !== 'All') queryParams.append('status', taskStatusFilter);
+          if (taskPriorityFilter !== 'All') queryParams.append('priority', taskPriorityFilter);
+          if (taskProjectFilter !== 'All') queryParams.append('projectId', taskProjectFilter);
+
+          const taskUrl = `${API_BASE}/tasks?${queryParams.toString()}`;
+          const taskRes = await fetch(taskUrl, { headers: authHeaders });
+          const taskData = await taskRes.json();
+
+          if (!taskRes.ok) {
+            throw new Error(taskData.error || 'Failed to fetch tasks');
+          }
+          setTasks(taskData.data || []);
+
+          // 3. Fetch Tenant Employees
+          const usersRes = await fetch(`${API_BASE}/auth/users`, { headers: authHeaders });
+          if (usersRes.ok) {
+            const usersData = await usersRes.json();
+            setEmployees(usersData.data || []);
+          }
+        } catch (error) {
+          addToast('error', error.message);
+        } finally {
+          setIsLoading(false);
+        }
+      };
+
+      // Re-fetch when filters change
+      useEffect(() => {
+        if (token) {
+          loadDashboardData();
+        }
+      }, [projectStatusFilter, taskStatusFilter, taskPriorityFilter, taskProjectFilter]);
+
+      // Action: One-Click Demo Workspace Seed
+      const handleQuickDemoSeed = async (isAuto = false) => {
+        setIsLoading(true);
+        try {
+          const res = await fetch(`${API_BASE}/auth/demo-seed`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+          });
+          const result = await res.json();
+          if (!res.ok) throw new Error(result.error || 'Failed to initialize workspace');
+
+          localStorage.setItem('taskflow_token', result.data.token);
+          localStorage.setItem('taskflow_user', JSON.stringify(result.data.user));
+          setToken(result.data.token);
+          setCurrentUser(result.data.user);
+
+          addToast('success', isAuto ? 'Welcome! Demo workspace initialized.' : 'Demo workspace loaded successfully!');
+        } catch (err) {
+          addToast('error', `Initialization failed: ${err.message}`);
+          setIsLoading(false);
+        }
+      };
+
+      // Action: Create Project
+      const handleCreateProject = async (projectData) => {
+        if (isSubmittingProject) return;
+        setIsSubmittingProject(true);
+        try {
+          const res = await fetch(`${API_BASE}/projects`, {
+            method: 'POST',
+            headers: authHeaders,
+            body: JSON.stringify(projectData),
+          });
+          const result = await res.json();
+          if (!res.ok) throw new Error(result.error || 'Failed to create project');
+
+          addToast('success', `Project "${result.data.name}" created!`);
+          setIsProjectModalOpen(false);
+          await loadDashboardData();
+        } catch (err) {
+          addToast('error', err.message);
+        } finally {
+          setIsSubmittingProject(false);
+        }
+      };
+
+      // Action: Create Task
+      const handleCreateTask = async (taskData) => {
+        if (isSubmittingTask) return;
+        setIsSubmittingTask(true);
+        try {
+          const res = await fetch(`${API_BASE}/tasks`, {
+            method: 'POST',
+            headers: authHeaders,
+            body: JSON.stringify(taskData),
+          });
+          const result = await res.json();
+          if (!res.ok) throw new Error(result.error || 'Failed to create task');
+
+          addToast('success', `Task "${result.data.title}" created!`);
+          setIsTaskModalOpen(false);
+          await loadDashboardData();
+        } catch (err) {
+          addToast('error', err.message);
+        } finally {
+          setIsSubmittingTask(false);
+        }
+      };
+
+      // Action: Update Task Status
+      const handleUpdateTaskStatus = async (taskId, newStatus) => {
+        if (updatingTaskId === taskId) return;
+        setUpdatingTaskId(taskId);
+        try {
+          const res = await fetch(`${API_BASE}/tasks/${taskId}/status`, {
+            method: 'PATCH',
+            headers: authHeaders,
+            body: JSON.stringify({ status: newStatus }),
+          });
+          const result = await res.json();
+          if (!res.ok) throw new Error(result.error || 'Failed to update task status');
+
+          // Optimistic local state update
+          setTasks((prev) =>
+            prev.map((t) => (t._id === taskId ? { ...t, status: newStatus } : t))
+          );
+          addToast('success', `Task status updated to "${newStatus}"`);
+        } catch (err) {
+          addToast('error', err.message);
+          await loadDashboardData(); // rollback to server state
+        } finally {
+          setUpdatingTaskId(null);
+        }
+      };
+
+      // Filtered Tasks (Client-side Search on top of Server Filters)
+      const filteredTasks = useMemo(() => {
+        if (!searchQuery.trim()) return tasks;
+        const q = searchQuery.toLowerCase();
+        return tasks.filter(
+          (t) =>
+            t.title?.toLowerCase().includes(q) ||
+            t.description?.toLowerCase().includes(q) ||
+            t.projectId?.name?.toLowerCase().includes(q) ||
+            t.assignedTo?.name?.toLowerCase().includes(q)
+        );
+      }, [tasks, searchQuery]);
+
+      // Metric Counts
+      const metrics = useMemo(() => {
+        const totalProjects = projects.length;
+        const activeProjects = projects.filter((p) => p.status === 'Active').length;
+        const totalTasks = tasks.length;
+        const completedTasks = tasks.filter((t) => t.status === 'Completed').length;
+        const inProgressTasks = tasks.filter((t) => t.status === 'In Progress').length;
+        const pendingTasks = tasks.filter((t) => t.status === 'Pending').length;
+        const highPriority = tasks.filter((t) => t.priority === 'High' && t.status !== 'Completed').length;
+
+        return {
+          totalProjects,
+          activeProjects,
+          totalTasks,
+          completedTasks,
+          inProgressTasks,
+          pendingTasks,
+          highPriority,
+        };
+      }, [projects, tasks]);
+
+      return (
+        <div className="min-h-screen flex flex-col">
+          {/* Toast Notification Container */}
+          <div className="fixed top-5 right-5 z-50 flex flex-col gap-2 max-w-md w-full pointer-events-none">
+            {toasts.map((toast) => (
+              <div
+                key={toast.id}
+                className={`pointer-events-auto p-4 rounded-xl shadow-lg border text-sm flex items-start gap-3 transition-all duration-300 transform translate-y-0 ${
+                  toast.type === 'success'
+                    ? 'bg-emerald-50 border-emerald-200 text-emerald-800'
+                    : 'bg-rose-50 border-rose-200 text-rose-800'
+                }`}
+              >
+                <div className="mt-0.5 font-bold">
+                  {toast.type === 'success' ? '✓' : '⚠️'}
+                </div>
+                <div className="flex-1 font-medium">{toast.message}</div>
+                <button
+                  onClick={() => setToasts((prev) => prev.filter((t) => t.id !== toast.id))}
+                  className="text-slate-400 hover:text-slate-600 font-bold"
+                >
+                  ×
+                </button>
+              </div>
+            ))}
+          </div>
+
+          {/* Navigation Bar */}
+          <header className="bg-white border-b border-slate-200 sticky top-0 z-30 shadow-sm">
+            <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
+              {/* Brand Logo & Title */}
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-brand-600 text-white flex items-center justify-center font-bold text-xl shadow-md">
+                  TF
+                </div>
+                <div>
+                  <h1 className="text-lg font-bold text-slate-900 leading-none">TaskFlow</h1>
+                  <span className="text-xs text-slate-500 font-medium">Multi-Tenant Management</span>
+                </div>
+              </div>
+
+              {/* User Session & Quick Actions */}
+              <div className="flex items-center gap-3">
+                {currentUser ? (
+                  <div className="hidden md:flex items-center gap-2 bg-slate-100 py-1.5 px-3 rounded-lg text-xs font-medium text-slate-700">
+                    <span className="w-2 h-2 rounded-full bg-emerald-500"></span>
+                    <span className="font-semibold">{currentUser.name}</span>
+                    <span className="bg-white px-2 py-0.5 rounded text-slate-500 border border-slate-200">{currentUser.role}</span>
+                  </div>
+                ) : null}
+
+                <button
+                  onClick={() => handleQuickDemoSeed(false)}
+                  title="Generate a new demo organization with preloaded projects and tasks"
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-indigo-50 text-brand-700 hover:bg-indigo-100 transition border border-indigo-200"
+                >
+                  <Icons.Sparkles />
+                  <span className="hidden sm:inline">Load Demo Data</span>
+                </button>
+
+                <button
+                  onClick={loadDashboardData}
+                  disabled={isLoading}
+                  title="Refresh Data"
+                  className="p-2 rounded-lg text-slate-600 hover:bg-slate-100 border border-slate-200 transition"
+                >
+                  <span className={isLoading ? 'inline-block animate-spin-fast' : ''}>
+                    <Icons.Refresh />
+                  </span>
+                </button>
+
+                <button
+                  onClick={() => setIsProjectModalOpen(true)}
+                  className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg text-xs font-semibold bg-slate-900 text-white hover:bg-slate-800 transition shadow"
+                >
+                  <Icons.Plus />
+                  <span>New Project</span>
+                </button>
+
+                <button
+                  onClick={() => setIsTaskModalOpen(true)}
+                  className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg text-xs font-semibold bg-brand-600 text-white hover:bg-brand-700 transition shadow"
+                >
+                  <Icons.Plus />
+                  <span>New Task</span>
+                </button>
+              </div>
+            </div>
+          </header>
+
+          {/* Main Dashboard Content */}
+          <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 flex-1 w-full space-y-8">
+            {/* Top Metric Cards */}
+            <section className="grid grid-cols-2 md:grid-cols-4 gap-4">
+              <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex items-center justify-between">
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-wider text-slate-500">Total Projects</p>
+                  <h3 className="text-2xl font-bold text-slate-900 mt-1">{metrics.totalProjects}</h3>
+                  <p className="text-xs text-emerald-600 font-medium mt-0.5">{metrics.activeProjects} active</p>
+                </div>
+                <div className="w-12 h-12 bg-indigo-50 text-brand-600 rounded-xl flex items-center justify-center">
+                  <Icons.Folder />
+                </div>
+              </div>
+
+              <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex items-center justify-between">
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-wider text-slate-500">Total Tasks</p>
+                  <h3 className="text-2xl font-bold text-slate-900 mt-1">{metrics.totalTasks}</h3>
+                  <p className="text-xs text-slate-500 font-medium mt-0.5">{metrics.completedTasks} completed</p>
+                </div>
+                <div className="w-12 h-12 bg-emerald-50 text-emerald-600 rounded-xl flex items-center justify-center">
+                  <Icons.CheckCircle />
+                </div>
+              </div>
+
+              <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex items-center justify-between">
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-wider text-slate-500">In Progress</p>
+                  <h3 className="text-2xl font-bold text-amber-600 mt-1">{metrics.inProgressTasks}</h3>
+                  <p className="text-xs text-slate-500 font-medium mt-0.5">{metrics.pendingTasks} pending</p>
+                </div>
+                <div className="w-12 h-12 bg-amber-50 text-amber-600 rounded-xl flex items-center justify-center">
+                  <Icons.Clock />
+                </div>
+              </div>
+
+              <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex items-center justify-between">
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-wider text-slate-500">High Priority</p>
+                  <h3 className="text-2xl font-bold text-rose-600 mt-1">{metrics.highPriority}</h3>
+                  <p className="text-xs text-rose-500 font-medium mt-0.5">Needs immediate action</p>
+                </div>
+                <div className="w-12 h-12 bg-rose-50 text-rose-600 rounded-xl flex items-center justify-center">
+                  <span className="font-bold text-lg">!</span>
+                </div>
+              </div>
+            </section>
+
+            {/* SECTION A: Project Management */}
+            <section className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6 space-y-5">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-slate-100">
+                <div>
+                  <div className="flex items-center gap-2">
+                    <h2 className="text-lg font-bold text-slate-900">Projects</h2>
+                    <span className="bg-slate-100 text-slate-700 text-xs font-semibold px-2.5 py-0.5 rounded-full">
+                      {projects.length}
+                    </span>
+                  </div>
+                  <p className="text-xs text-slate-500 mt-0.5">Manage and track company projects</p>
+                </div>
+
+                <div className="flex items-center gap-3">
+                  {/* Status Filter Pills */}
+                  <div className="flex bg-slate-100 p-1 rounded-lg text-xs font-medium">
+                    {['All', 'Active', 'Completed'].map((status) => (
+                      <button
+                        key={status}
+                        onClick={() => setProjectStatusFilter(status)}
+                        className={`px-3 py-1 rounded-md transition ${
+                          projectStatusFilter === status
+                            ? 'bg-white text-slate-900 shadow-xs font-semibold'
+                            : 'text-slate-600 hover:text-slate-900'
+                        }`}
+                      >
+                        {status}
+                      </button>
+                    ))}
+                  </div>
+
+                  <button
+                    onClick={() => setIsProjectModalOpen(true)}
+                    className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-semibold bg-slate-900 text-white hover:bg-slate-800 transition"
+                  >
+                    <Icons.Plus />
+                    <span>Add Project</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* Projects Grid */}
+              {isLoading && projects.length === 0 ? (
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  {[1, 2, 3].map((i) => (
+                    <div key={i} className="h-36 bg-slate-100 animate-pulse rounded-xl"></div>
+                  ))}
+                </div>
+              ) : projects.length === 0 ? (
+                <div className="text-center py-10 bg-slate-50 rounded-xl border border-dashed border-slate-200">
+                  <div className="mx-auto w-12 h-12 rounded-full bg-slate-100 flex items-center justify-center text-slate-400 mb-3">
+                    <Icons.Folder />
+                  </div>
+                  <h4 className="text-sm font-semibold text-slate-800">No projects found</h4>
+                  <p className="text-xs text-slate-500 mt-1 max-w-sm mx-auto">
+                    {projectStatusFilter !== 'All'
+                      ? `No projects found with status "${projectStatusFilter}". Try changing the filter.`
+                      : 'Get started by creating your first project for this organization.'}
+                  </p>
+                  <button
+                    onClick={() => setIsProjectModalOpen(true)}
+                    className="mt-4 inline-flex items-center gap-1.5 px-4 py-2 rounded-lg text-xs font-semibold bg-brand-600 text-white hover:bg-brand-700 shadow"
+                  >
+                    <Icons.Plus />
+                    Create New Project
+                  </button>
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                  {projects.map((proj) => (
+                    <div
+                      key={proj._id}
+                      onClick={() => setTaskProjectFilter(proj._id === taskProjectFilter ? 'All' : proj._id)}
+                      className={`cursor-pointer group p-5 rounded-xl border transition-all duration-200 relative flex flex-col justify-between ${
+                        taskProjectFilter === proj._id
+                          ? 'border-brand-500 ring-2 ring-brand-100 bg-brand-50/20'
+                          : 'border-slate-200 hover:border-slate-300 hover:shadow-md bg-white'
+                      }`}
+                    >
+                      <div>
+                        <div className="flex items-start justify-between gap-2">
+                          <h3 className="font-bold text-slate-900 group-hover:text-brand-600 transition text-base">
+                            {proj.name}
+                          </h3>
+                          <span
+                            className={`text-[11px] font-semibold px-2.5 py-0.5 rounded-full uppercase tracking-wider shrink-0 ${
+                              proj.status === 'Active'
+                                ? 'bg-emerald-100 text-emerald-800 border border-emerald-200'
+                                : 'bg-slate-100 text-slate-700 border border-slate-200'
+                            }`}
+                          >
+                            {proj.status}
+                          </span>
+                        </div>
+                        <p className="text-xs text-slate-600 mt-2 line-clamp-2">
+                          {proj.description || 'No description provided.'}
+                        </p>
+                      </div>
+
+                      <div className="mt-4 pt-3 border-t border-slate-100 flex items-center justify-between text-[11px] text-slate-500">
+                        <span className="flex items-center gap-1">
+                          <Icons.User />
+                          {proj.createdBy?.name || 'Admin'}
+                        </span>
+                        <span>{new Date(proj.createdAt).toLocaleDateString()}</span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </section>
+
+            {/* SECTION B: Task Management */}
+            <section className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6 space-y-5">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-slate-100">
+                <div>
+                  <div className="flex items-center gap-2">
+                    <h2 className="text-lg font-bold text-slate-900">Task Management</h2>
+                    <span className="bg-slate-100 text-slate-700 text-xs font-semibold px-2.5 py-0.5 rounded-full">
+                      {filteredTasks.length}
+                    </span>
+                  </div>
+                  <p className="text-xs text-slate-500 mt-0.5">Filter, assign, and update task statuses</p>
+                </div>
+
+                <div className="flex items-center gap-3">
+                  {/* View Mode Toggle */}
+                  <div className="flex bg-slate-100 p-1 rounded-lg text-xs">
+                    <button
+                      onClick={() => setViewMode('table')}
+                      className={`px-3 py-1 rounded-md font-medium transition ${
+                        viewMode === 'table' ? 'bg-white text-slate-900 shadow-xs' : 'text-slate-600'
+                      }`}
+                    >
+                      Table
+                    </button>
+                    <button
+                      onClick={() => setViewMode('card')}
+                      className={`px-3 py-1 rounded-md font-medium transition ${
+                        viewMode === 'card' ? 'bg-white text-slate-900 shadow-xs' : 'text-slate-600'
+                      }`}
+                    >
+                      Cards
+                    </button>
+                  </div>
+
+                  <button
+                    onClick={() => setIsTaskModalOpen(true)}
+                    className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg text-xs font-semibold bg-brand-600 text-white hover:bg-brand-700 transition shadow"
+                  >
+                    <Icons.Plus />
+                    <span>Create Task</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* Filters & Search Toolbar */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 bg-slate-50 p-3.5 rounded-xl border border-slate-200">
+                {/* Search */}
+                <div className="relative">
+                  <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-400">
+                    <Icons.Search />
+                  </div>
+                  <input
+                    type="text"
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    placeholder="Search tasks..."
+                    className="w-full pl-9 pr-3 py-1.5 bg-white border border-slate-200 rounded-lg text-xs text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-brand-500"
+                  />
+                </div>
+
+                {/* Status Filter */}
+                <div>
+                  <select
+                    value={taskStatusFilter}
+                    onChange={(e) => setTaskStatusFilter(e.target.value)}
+                    className="w-full py-1.5 px-3 bg-white border border-slate-200 rounded-lg text-xs text-slate-700 focus:outline-none focus:ring-2 focus:ring-brand-500"
+                  >
+                    <option value="All">All Statuses</option>
+                    <option value="Pending">Pending</option>
+                    <option value="In Progress">In Progress</option>
+                    <option value="Completed">Completed</option>
+                  </select>
+                </div>
+
+                {/* Priority Filter */}
+                <div>
+                  <select
+                    value={taskPriorityFilter}
+                    onChange={(e) => setTaskPriorityFilter(e.target.value)}
+                    className="w-full py-1.5 px-3 bg-white border border-slate-200 rounded-lg text-xs text-slate-700 focus:outline-none focus:ring-2 focus:ring-brand-500"
+                  >
+                    <option value="All">All Priorities</option>
+                    <option value="Low">Low Priority</option>
+                    <option value="Medium">Medium Priority</option>
+                    <option value="High">High Priority</option>
+                  </select>
+                </div>
+
+                {/* Project Filter */}
+                <div>
+                  <select
+                    value={taskProjectFilter}
+                    onChange={(e) => setTaskProjectFilter(e.target.value)}
+                    className="w-full py-1.5 px-3 bg-white border border-slate-200 rounded-lg text-xs text-slate-700 focus:outline-none focus:ring-2 focus:ring-brand-500"
+                  >
+                    <option value="All">All Projects</option>
+                    {projects.map((p) => (
+                      <option key={p._id} value={p._id}>
+                        {p.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              {/* Tasks Display */}
+              {isLoading && tasks.length === 0 ? (
+                <div className="py-12 flex justify-center items-center">
+                  <div className="animate-spin-fast rounded-full h-8 w-8 border-b-2 border-brand-600"></div>
+                </div>
+              ) : filteredTasks.length === 0 ? (
+                <div className="text-center py-12 bg-slate-50 rounded-xl border border-dashed border-slate-200">
+                  <div className="mx-auto w-12 h-12 rounded-full bg-slate-100 flex items-center justify-center text-slate-400 mb-3">
+                    <Icons.CheckCircle />
+                  </div>
+                  <h4 className="text-sm font-semibold text-slate-800">No tasks found</h4>
+                  <p className="text-xs text-slate-500 mt-1 max-w-sm mx-auto">
+                    Try adjusting your filters or create a new task under one of your active projects.
+                  </p>
+                  <button
+                    onClick={() => setIsTaskModalOpen(true)}
+                    className="mt-4 inline-flex items-center gap-1.5 px-4 py-2 rounded-lg text-xs font-semibold bg-brand-600 text-white hover:bg-brand-700 shadow"
+                  >
+                    <Icons.Plus />
+                    Create New Task
+                  </button>
+                </div>
+              ) : viewMode === 'table' ? (
+                /* TABLE LAYOUT */
+                <div className="overflow-x-auto border border-slate-200 rounded-xl">
+                  <table className="min-w-full divide-y divide-slate-200 text-left text-xs">
+                    <thead className="bg-slate-50 font-semibold text-slate-600">
+                      <tr>
+                        <th className="py-3 px-4">Task Details</th>
+                        <th className="py-3 px-4">Project</th>
+                        <th className="py-3 px-4">Priority</th>
+                        <th className="py-3 px-4">Status (Click to update)</th>
+                        <th className="py-3 px-4">Assigned To</th>
+                        <th className="py-3 px-4">Created</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100 bg-white">
+                      {filteredTasks.map((task) => (
+                        <tr key={task._id} className="hover:bg-slate-50/80 transition">
+                          <td className="py-3.5 px-4">
+                            <div className="font-semibold text-slate-900 text-sm">{task.title}</div>
+                            {task.description ? (
+                              <div className="text-slate-500 text-xs mt-0.5 line-clamp-1">{task.description}</div>
+                            ) : null}
+                          </td>
+
+                          <td className="py-3.5 px-4 whitespace-nowrap">
+                            <span className="inline-flex items-center px-2.5 py-1 rounded-md text-[11px] font-medium bg-slate-100 text-slate-800 border border-slate-200">
+                              {task.projectId?.name || 'Unknown Project'}
+                            </span>
+                          </td>
+
+                          <td className="py-3.5 px-4 whitespace-nowrap">
+                            <span
+                              className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-[11px] font-semibold border ${
+                                task.priority === 'High'
+                                  ? 'bg-rose-50 text-rose-700 border-rose-200'
+                                  : task.priority === 'Medium'
+                                  ? 'bg-amber-50 text-amber-700 border-amber-200'
+                                  : 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                              }`}
+                            >
+                              {task.priority}
+                            </span>
+                          </td>
+
+                          <td className="py-3.5 px-4 whitespace-nowrap">
+                            <div className="relative inline-block">
+                              <select
+                                value={task.status}
+                                disabled={updatingTaskId === task._id}
+                                onChange={(e) => handleUpdateTaskStatus(task._id, e.target.value)}
+                                className={`text-xs font-semibold py-1 px-2.5 rounded-lg border cursor-pointer focus:outline-none focus:ring-2 focus:ring-brand-500 transition ${
+                                  task.status === 'Completed'
+                                    ? 'bg-emerald-50 border-emerald-300 text-emerald-800'
+                                    : task.status === 'In Progress'
+                                    ? 'bg-amber-50 border-amber-300 text-amber-800'
+                                    : 'bg-slate-50 border-slate-300 text-slate-700'
+                                }`}
+                              >
+                                <option value="Pending">Pending</option>
+                                <option value="In Progress">In Progress</option>
+                                <option value="Completed">Completed</option>
+                              </select>
+                              {updatingTaskId === task._id ? (
+                                <span className="ml-2 inline-block animate-spin-fast text-brand-600">⌛</span>
+                              ) : null}
+                            </div>
+                          </td>
+
+                          <td className="py-3.5 px-4 whitespace-nowrap">
+                            {task.assignedTo ? (
+                              <div className="flex items-center gap-2">
+                                <div className="w-6 h-6 rounded-full bg-brand-100 text-brand-700 flex items-center justify-center font-bold text-[10px]">
+                                  {task.assignedTo.name?.charAt(0) || 'U'}
+                                </div>
+                                <div>
+                                  <div className="font-medium text-slate-800">{task.assignedTo.name}</div>
+                                  <div className="text-[10px] text-slate-400">{task.assignedTo.role}</div>
+                                </div>
+                              </div>
+                            ) : (
+                              <span className="text-slate-400 italic">Unassigned</span>
+                            )}
+                          </td>
+
+                          <td className="py-3.5 px-4 whitespace-nowrap text-slate-400">
+                            {new Date(task.createdAt).toLocaleDateString()}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              ) : (
+                /* CARD LAYOUT */
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                  {filteredTasks.map((task) => (
+                    <div
+                      key={task._id}
+                      className="bg-white border border-slate-200 rounded-xl p-4 shadow-xs flex flex-col justify-between hover:shadow-md transition space-y-3"
+                    >
+                      <div>
+                        <div className="flex items-start justify-between gap-2">
+                          <span
+                            className={`text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full border ${
+                              task.priority === 'High'
+                                ? 'bg-rose-50 text-rose-700 border-rose-200'
+                                : task.priority === 'Medium'
+                                ? 'bg-amber-50 text-amber-700 border-amber-200'
+                                : 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                            }`}
+                          >
+                            {task.priority}
+                          </span>
+                          <span className="text-[11px] font-medium text-slate-500 bg-slate-100 px-2 py-0.5 rounded">
+                            {task.projectId?.name || 'Project'}
+                          </span>
+                        </div>
+
+                        <h4 className="font-bold text-slate-900 mt-2 text-sm">{task.title}</h4>
+                        {task.description ? (
+                          <p className="text-xs text-slate-500 mt-1 line-clamp-2">{task.description}</p>
+                        ) : null}
+                      </div>
+
+                      <div className="pt-3 border-t border-slate-100 flex items-center justify-between">
+                        {/* Status Selector */}
+                        <select
+                          value={task.status}
+                          disabled={updatingTaskId === task._id}
+                          onChange={(e) => handleUpdateTaskStatus(task._id, e.target.value)}
+                          className={`text-xs font-semibold py-1 px-2.5 rounded-md border cursor-pointer focus:outline-none focus:ring-1 focus:ring-brand-500 ${
+                            task.status === 'Completed'
+                              ? 'bg-emerald-50 border-emerald-200 text-emerald-800'
+                              : task.status === 'In Progress'
+                              ? 'bg-amber-50 border-amber-200 text-amber-800'
+                              : 'bg-slate-50 border-slate-200 text-slate-700'
+                          }`}
+                        >
+                          <option value="Pending">Pending</option>
+                          <option value="In Progress">In Progress</option>
+                          <option value="Completed">Completed</option>
+                        </select>
+
+                        {/* Assignee */}
+                        <div className="flex items-center gap-1.5 text-xs text-slate-600">
+                          <Icons.User />
+                          <span>{task.assignedTo?.name || 'Unassigned'}</span>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </section>
+          </main>
+
+          {/* MODAL: Create Project */}
+          {isProjectModalOpen ? (
+            <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 backdrop-blur-xs p-4">
+              <div className="bg-white rounded-2xl max-w-md w-full shadow-2xl border border-slate-200 overflow-hidden transform transition-all">
+                <div className="p-6 border-b border-slate-100 flex items-center justify-between">
+                  <h3 className="text-base font-bold text-slate-900">Create New Project</h3>
+                  <button
+                    onClick={() => !isSubmittingProject && setIsProjectModalOpen(false)}
+                    className="text-slate-400 hover:text-slate-600"
+                  >
+                    <Icons.Close />
+                  </button>
+                </div>
+
+                <form
+                  onSubmit={(e) => {
+                    e.preventDefault();
+                    const formData = new FormData(e.target);
+                    handleCreateProject({
+                      name: formData.get('name'),
+                      description: formData.get('description'),
+                      status: formData.get('status'),
+                    });
+                  }}
+                  className="p-6 space-y-4"
+                >
+                  <div>
+                    <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">
+                      Project Name *
+                    </label>
+                    <input
+                      name="name"
+                      required
+                      placeholder="e.g. Mobile Application V2"
+                      className="w-full px-3.5 py-2 border border-slate-200 rounded-lg text-sm text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-brand-500"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">
+                      Description
+                    </label>
+                    <textarea
+                      name="description"
+                      rows="3"
+                      placeholder="Brief overview of project deliverables..."
+                      className="w-full px-3.5 py-2 border border-slate-200 rounded-lg text-sm text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-brand-500"
+                    ></textarea>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">
+                      Initial Status
+                    </label>
+                    <select
+                      name="status"
+                      defaultValue="Active"
+                      className="w-full px-3.5 py-2 border border-slate-200 rounded-lg text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-brand-500"
+                    >
+                      <option value="Active">Active</option>
+                      <option value="Completed">Completed</option>
+                    </select>
+                  </div>
+
+                  <div className="pt-4 flex items-center justify-end gap-3 border-t border-slate-100">
+                    <button
+                      type="button"
+                      disabled={isSubmittingProject}
+                      onClick={() => setIsProjectModalOpen(false)}
+                      className="px-4 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-100 rounded-lg transition"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="submit"
+                      disabled={isSubmittingProject}
+                      className="px-5 py-2 text-xs font-semibold bg-brand-600 hover:bg-brand-700 text-white rounded-lg shadow transition flex items-center gap-2 disabled:opacity-50"
+                    >
+                      {isSubmittingProject ? (
+                        <>
+                          <span className="animate-spin-fast inline-block">⌛</span>
+                          <span>Creating...</span>
+                        </>
+                      ) : (
+                        <span>Create Project</span>
+                      )}
+                    </button>
+                  </div>
+                </form>
+              </div>
+            </div>
+          ) : null}
+
+          {/* MODAL: Create Task */}
+          {isTaskModalOpen ? (
+            <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 backdrop-blur-xs p-4">
+              <div className="bg-white rounded-2xl max-w-lg w-full shadow-2xl border border-slate-200 overflow-hidden transform transition-all">
+                <div className="p-6 border-b border-slate-100 flex items-center justify-between">
+                  <h3 className="text-base font-bold text-slate-900">Create New Task</h3>
+                  <button
+                    onClick={() => !isSubmittingTask && setIsTaskModalOpen(false)}
+                    className="text-slate-400 hover:text-slate-600"
+                  >
+                    <Icons.Close />
+                  </button>
+                </div>
+
+                <form
+                  onSubmit={(e) => {
+                    e.preventDefault();
+                    const formData = new FormData(e.target);
+                    const assignedVal = formData.get('assignedTo');
+                    handleCreateTask({
+                      title: formData.get('title'),
+                      projectId: formData.get('projectId'),
+                      assignedTo: assignedVal || null,
+                      priority: formData.get('priority'),
+                      status: formData.get('status'),
+                      description: formData.get('description'),
+                    });
+                  }}
+                  className="p-6 space-y-4"
+                >
+                  <div>
+                    <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">
+                      Task Title *
+                    </label>
+                    <input
+                      name="title"
+                      required
+                      placeholder="e.g. Implement OAuth Flow"
+                      className="w-full px-3.5 py-2 border border-slate-200 rounded-lg text-sm text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-brand-500"
+                    />
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">
+                        Select Project *
+                      </label>
+                      <select
+                        name="projectId"
+                        required
+                        className="w-full px-3.5 py-2 border border-slate-200 rounded-lg text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-brand-500"
+                      >
+                        <option value="">-- Choose Project --</option>
+                        {projects.map((p) => (
+                          <option key={p._id} value={p._id}>
+                            {p.name}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">
+                        Assign Employee
+                      </label>
+                      <select
+                        name="assignedTo"
+                        defaultValue=""
+                        className="w-full px-3.5 py-2 border border-slate-200 rounded-lg text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-brand-500"
+                      >
+                        <option value="">-- Unassigned --</option>
+                        {employees.map((emp) => (
+                          <option key={emp._id} value={emp._id}>
+                            {emp.name} ({emp.role})
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">
+                        Priority
+                      </label>
+                      <select
+                        name="priority"
+                        defaultValue="Medium"
+                        className="w-full px-3.5 py-2 border border-slate-200 rounded-lg text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-brand-500"
+                      >
+                        <option value="Low">Low</option>
+                        <option value="Medium">Medium</option>
+                        <option value="High">High</option>
+                      </select>
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">
+                        Initial Status
+                      </label>
+                      <select
+                        name="status"
+                        defaultValue="Pending"
+                        className="w-full px-3.5 py-2 border border-slate-200 rounded-lg text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-brand-500"
+                      >
+                        <option value="Pending">Pending</option>
+                        <option value="In Progress">In Progress</option>
+                        <option value="Completed">Completed</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">
+                      Description
+                    </label>
+                    <textarea
+                      name="description"
+                      rows="3"
+                      placeholder="Task details and acceptance criteria..."
+                      className="w-full px-3.5 py-2 border border-slate-200 rounded-lg text-sm text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-brand-500"
+                    ></textarea>
+                  </div>
+
+                  <div className="pt-4 flex items-center justify-end gap-3 border-t border-slate-100">
+                    <button
+                      type="button"
+                      disabled={isSubmittingTask}
+                      onClick={() => setIsTaskModalOpen(false)}
+                      className="px-4 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-100 rounded-lg transition"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="submit"
+                      disabled={isSubmittingTask}
+                      className="px-5 py-2 text-xs font-semibold bg-brand-600 hover:bg-brand-700 text-white rounded-lg shadow transition flex items-center gap-2 disabled:opacity-50"
+                    >
+                      {isSubmittingTask ? (
+                        <>
+                          <span className="animate-spin-fast inline-block">⌛</span>
+                          <span>Creating...</span>
+                        </>
+                      ) : (
+                        <span>Create Task</span>
+                      )}
+                    </button>
+                  </div>
+                </form>
+              </div>
+            </div>
+          ) : null}
+        </div>
+      );
+    }
+
+    ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+  </script>
+</body>
+</html>
